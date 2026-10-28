@@ -1,0 +1,35 @@
+Picture Bridge v1.0 — Windows Quick Start
+Created by: LimeT
+
+Supported interface languages: 한국어 | English | 日本語 | 简体中文
+To change the interface language, select it from the Language drop-down at the top right.
+The choice is applied immediately and remembered the next time you launch the app.
+
+SETUP AND USE
+1. Install 64-bit Python 3.10+ and Canon Picture Style Editor (PSE) on Windows.
+   If you only need CUBE → XMP, PSE is not required.
+2. Extract the full ZIP and run launch_windows.bat.
+3. Select "1. Open .cube / .xmp" to open a LUT or Lightroom/Camera Raw XMP file.
+4. Select "Preview photo / RAW" to load a photo and check the color effect.
+5. For CUBE/XMP → PF3: choose a base style and effect strength, then select
+   "3. Generate .pf3 file". This requires the Canon PSE Windows DLL.
+6. For CUBE → Lightroom XMP: select "4. .cube → Lightroom .xmp".
+7. Verify the result in Canon DPP (.pf3) or Lightroom/Camera Raw (.xmp).
+
+IMPORTANT
+- PF3 conversion is an approximation; colors may differ from the source LUT.
+- XMP develop presets are approximated only for supported adjustments.
+  Unsupported settings are reported in a warning dialog.
+- CUBE → XMP creates a creative profile containing a 3D LUT, not editable sliders.
+- Camera compatibility and importing XMP into Lightroom are not independently verified.
+- The package includes MIT-licensed source and scripts, not a prebuilt EXE,
+  Canon DLLs, Adobe files, or a Canon PSE installer.
+
+BUILD A WINDOWS EXECUTABLE
+Run build_windows.bat; the output is dist\PictureBridge.exe.
+The EXE metadata retains Picture Bridge, version 1.0, and LimeT.
+
+CLI examples:
+python cli.py look.cube -o look.pf3
+python cli.py preset.xmp -o result.pf3
+python cli.py look.cube -o LightroomLook.xmp --name "My Profile"

@@ -1,0 +1,33 @@
+Picture Bridge v1.0 사용 방법
+제작자 : LimeT
+
+지원 언어: 한국어 / English / 日本語 / 简体中文
+프로그램 오른쪽 상단 언어 선택 메뉴에서 즉시 전환할 수 있습니다.
+선택한 언어는 다음 실행에도 유지됩니다.
+
+1. Windows 64비트 Python 3.10 이상과 Canon Picture Style Editor(PSE)를 설치합니다.
+2. 압축을 모두 풀고 launch_windows.bat을 실행합니다.
+3. [1. .cube / .xmp 불러오기]에서 .cube 또는 Lightroom/Camera Raw .xmp를 선택합니다.
+4. 사진/RAW 미리보기를 열고 색감과 전체 해상도를 확인합니다.
+5. PF3 변환은 기준 스타일·변환 강도를 설정한 다음 [3. 실제 .pf3 파일 생성]을 선택합니다.
+6. CUBE → Adobe XMP는 [4. .cube → Lightroom .xmp 생성]을 선택합니다.
+7. 생성된 PF3는 Canon DPP에서, XMP는 Lightroom/Camera Raw에서 직접 확인합니다.
+
+주의 사항
+- PF3 생성에는 Windows와 Canon PSE 설치본의 EdsCFParse.dll이 필요합니다.
+- CUBE→XMP에는 Canon PSE가 필요하지 않습니다.
+- Adobe XMP 컬러 프로파일은 내부 3D RGB LUT를 추출합니다.
+- Lightroom 보정 프리셋은 노출/대비/커브/HSL 등 지원 항목을 근사 변환하며
+  원본 Lightroom과 완전히 같지 않습니다. 제외된 보정은 경고창에 나타납니다.
+- 카메라 실물에서의 PF3 적용, Lightroom 실제 XMP 가져오기는 별도 검증해야 합니다.
+- 전체 소스는 MIT 라이선스이며 캐논·어도비 소프트웨어를 포함하지 않습니다.
+
+Windows 실행 파일 제작
+- build_windows.bat 실행 시 dist\PictureBridge.exe 생성 (PyInstaller 필요).
+- EXE 파일 속성의 제품명은 Picture Bridge, 버전은 1.0, 제작자 표기는 LimeT입니다.
+- 배포 ZIP은 전체 소스와 빌드 스크립트이며 EXE 자체는 포함하지 않습니다.
+
+명령줄 예시
+python cli.py look.cube -o look.pf3
+python cli.py preset.xmp -o result.pf3
+python cli.py look.cube -o LightroomLook.xmp --name "My Profile"
