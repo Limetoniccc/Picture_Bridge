@@ -23,7 +23,7 @@ class CatalogTests(unittest.TestCase):
         self.assertGreaterEqual(len(_MESSAGES), 90)
         for code in LANGUAGES:
             self.assertIn('LimeT', tr(code, 'credit', version=APP_VERSION, author=APP_AUTHOR))
-            self.assertIn('1.0', tr(code, 'credit', version=APP_VERSION, author=APP_AUTHOR))
+            self.assertIn('1.1', tr(code, 'credit', version=APP_VERSION, author=APP_AUTHOR))
             self.assertTrue(tr(code, 'pf3_saved_body', path='a.pf3', bytes=1024,
                                sha='f'*20, mae=2.1, xmp_note=''))
 

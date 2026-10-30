@@ -1,4 +1,4 @@
-# Picture Bridge v1.0
+# Picture Bridge v1.1
 
 **제작자 : LimeT** · 오픈소스 (MIT 라이선스)
 
@@ -6,7 +6,139 @@
 
 Windows GUI and CLI for opening **3D CUBE LUTs and Adobe XMP looks**, inspecting
 full-resolution photos/RAW, exporting an **approximate Canon Picture Style (.pf3)**,
-and creating a **Lightroom/Camera Raw creative XMP profile from a CUBE** (MIT).
+creating a **Lightroom/Camera Raw creative XMP profile from a CUBE**, and exporting
+**standard / LUMIX-ready CUBE LUTs from XMP or CUBE** (MIT).
+
+## v1.1 — Consistent sRGB CUBE output (2026-10-30)
+
+**Output destinations are explicit:** Standard CUBE → Photoshop (document in **sRGB**),
+LUMIX CUBE → supported Panasonic REAL TIME LUT cameras, XMP → Adobe Lightroom,
+PF3 → Canon (the PF3 engine and fitting code remain unchanged).
+
+**Two CUBE buttons use one and the same LUT sampler.** For the same 0–100%
+strength, both export a 33³, full-range `[0,1]` RGB table in CUBE R-fast order
+with the same clamp policy and nine-digit rounding. At 100% the RGB rows are
+**byte-identical**, including for XMP inputs. The LUMIX version differs **only
+by its `#LUMIXPHOTOSTYLE` header**. The header changes how a physical LUMIX
+selects its *base Photo Style*; it does not numerically change the LUT RGB rows.
+The Photoshop CUBE now also bakes the current strength slider (previously it
+always exported at 100%). The GUI continues to begin at a provisional 50%.
+
+### Why XMP develop preset → sRGB CUBE cannot be exactly reverse-engineered
+
+A `.xmp` *develop preset* describes Lightroom process-engine operations, not a
+complete 3D LUT. `classic negative_by.BB.xmp`, for example, contains exposure,
+highlights/shadows, parametric + point tone curves, many HSL adjustments, and a
+*reference to* Adobe Color. That base camera profile is **not embedded**. A
+standalone sRGB LUT cannot reproduce per-image RAW processing, Adobe Color base
+rendering, camera white balance, highlight recovery, or masks. The existing
+approximation engine is retained for compatibility, and **has not been verified
+against Lightroom**. Changing the nominal output to sRGB does not solve those
+fundamental differences.
+
+**LUMIX:** Choose the Photo Style based on the rendering used to create the look.
+`STD` does *not* mathematically transform sRGB to the camera's Standard output.
+For Panasonic camera fidelity, build the LUT from a TIFF/JPEG captured with the
+chosen base Photo Style and test on the actual camera.
+
+**Canon:** `pf3_native.py`, `canon_fit.py`, and the PF3 export engine have not
+been modified. Existing dependency policy and the Python 3.15/rawpy limitation
+are also unchanged.
+
+## v1.1 — XMP → CUBE and Panasonic LUMIX Real Time LUT (2026-10-30)
+
+**Source ZIP only; no EXE bundled.** The Python dependencies and Canon PSE
+requirements have not changed from v1.0.
+
+### Two CUBE export options
+
+- **Save standard CUBE (incl. XMP):** opens either a 3D CUBE or Adobe XMP
+  (creative RGBTable profile or supported develop preset) and exports an
+  **33³** standard `.cube`. **The current strength setting also applies**,
+  just like the LUMIX CUBE.
+- **Export LUMIX CUBE (33³):** opens CUBE **or XMP**, resamples to a 33-point
+  full-range CUBE, includes the documented `#LUMIXPHOTOSTYLE` base-style tag,
+  and uses the current 0–100% strength slider. Default tag `STD`
+  (Standard), with a dropdown to select other documented Panasonic tags.
+  The default strength is still a *provisional 50%*, unless RAW analysis was used.
+
+Example output header:
+
+```cube
+TITLE "Picture Bridge LUT"
+#LUMIXPHOTOSTYLE STD
+LUT_3D_SIZE 33
+```
+
+LUT entries are output in R-fastest `.cube` order, with 9-digit ASCII decimal
+values clipped to the `[0,1]` range. Validity is checked before atomic save.
+The exporter reports the fraction of RGB components clipped by its own
+output-range restriction. Export does not require the Canon DLL or `rawpy`;
+RAW auto strength still requires `rawpy`.
+
+### Important limitations of XMP → LUMIX
+
+- **Creative XMP Color Profile:** the embedded Adobe RGBTable is decoded and
+  normalized to display-referred sRGB by the existing importer. External
+  Adobe camera profiles, look stages or base renders are **not** reproduced.
+- **Lightroom/Camera Raw develop XMP:** exposure, tone, HSL and color grading
+  are **display-RGB approximations**, not Adobe's actual RAW engine. Masks,
+  texture, clarity, grain, dehaze, local adjustments, lens corrections, white
+  balance and referenced camera profiles are **not transferable**. The GUI
+  displays approximation notices when appropriate.
+- **Camera color management is NOT automatic.** A LUT designed around Adobe's
+  sRGB-rendered preview does not automatically become identical when applied
+  over Panasonic's Standard, Natural, Portrait or V-Log rendering. Selecting
+  `#LUMIXPHOTOSTYLE STD` merely tags the expected camera base style; it does
+  **not** convert Log/video transforms to Standard. Check exposure, white
+  balance, contrast and base Photo Style against actual LUMIX JPEGs.
+- **Technical/Hybrid LUT classifier:** structural classification remains a
+  *heuristic*; it never guarantees that a lookup table targets LUMIX Standard.
+  An improperly matched Log LUT cannot be repaired by reducing opacity.
+- **Source resampling:** 32³ XMP tables and larger source CUBE tables are
+  sampled to 33³, potentially introducing interpolation errors. RGB values
+  outside `[0,1]` are clipped and reported rather than preserved.
+- **Real camera support unverified:** camera model, firmware, photo style tags,
+  card format and LUT transfer method vary. On supported models, Panasonic
+  documents 2–33-point `.cube` LUTs, full-range recommendation, and the
+  `#LUMIXPHOTOSTYLE` tag. For SD import, Panasonic recommends placing CUBE
+  files in the card root and ASCII-safe filenames (FAT32: 8 characters).
+  Refer to your camera manual for exact requirements.
+
+### GUI usage
+
+1. Load a `.cube` or `.xmp` file. An XMP can be a creative RGBTable profile or
+   an eligible develop preset. Unsupported files show an error rather than
+   silently generating an identity LUT.
+2. Optionally preview a photo/RAW. Set strength manually or use **Auto strength
+   · 1–5 RAW** for an appropriate Creative look.
+3. Choose the **LUMIX base Photo Style**. Default: `STD`. It must match the
+   intended LUMIX rendering conditions. Do not assume that a camera's V-Log
+   signal is sRGB.
+4. Click **Export LUMIX CUBE (33³)**. The selected strength is included in the exported LUT.
+5. Load the resulting CUBE via the LUMIX LUT Library on a supported camera.
+   Take test JPEGs and compare with the intended appearance.
+
+For a normal XMP → CUBE conversion without Panasonic tags,
+use **Save standard CUBE (incl. XMP)** instead.
+
+### Command-line examples
+
+```bat
+py -3 cli.py portrait.xmp -o portrait.cube
+py -3 cli.py portrait.xmp -o portrait_LUMIX.cube --lumix-style STD --strength 0.50
+py -3 cli.py creative.cube -o look_LUMIX.cube --lumix-style NAT --strength 0.75
+```
+
+No additional runtime dependencies are required. For each export option,
+only `.cube` output uses the new LUMIX path; `--lumix-style` cannot be used
+with `.xmp` or `.pf3` output. The user-selected source file is never
+silently overwritten through the GUI or CLI.
+
+Official Panasonic documentation:
+- S9 LUT Library: https://eww.pavc.panasonic.co.jp/dscoi/DC-S9/html/DC-S9_DVQP3138_eng/0074.html
+- S5II LUT Library: https://eww.pavc.panasonic.co.jp/dscoi/DC-S5M2/html/DC-S5M2_DVQP2839_eng/0180.html
+- Panasonic workflow guidance: https://www.panasonic.com/uk/consumer/cameras-camcorders/lumix-expert-advice-learn/lumix-expert-advice/using-real-time-luts.html
 
 ## v1.0 — Picture Bridge by LimeT
 
@@ -33,6 +165,76 @@ version metadata, and the default Adobe profile group. Converters, preview and
 Canon-native export are otherwise retained from v0.6. Run `build_windows.bat` on
 Windows to build `dist\PictureBridge.exe` with version and creator metadata.
 The source ZIP does not contain a prebuilt EXE.
+
+## RAW-based automatic strength recommendation (Mode B)
+
+**New in the v1.0 source revision:** the GUI now offers **Auto strength · 1–5 RAW**
+under the PF3 strength slider. This is a *conservative heuristic*, not an AI
+model, artistic grading objective, or a promise that a converted PF3 will match
+Canon DPP exactly.
+
+1. Open a `.cube` (or compatible `.xmp`) profile.
+2. Click **Auto strength · 1–5 RAW** and choose **one to five camera RAW files**.
+   For a style intended for general use, select scenes with varied lighting,
+   skin/landscape subject matter, and contrast.
+3. Wait for the background analysis to decode each RAW with `rawpy` using camera
+   white balance and sRGB output (without automatic brightness adjustment).
+4. The tool tests 100%, 95%, …, 5% strength and chooses the **strongest blend
+   satisfying conservative thresholds on *all* selected photos**. It inspects
+   95th-percentile display-luma and RGB changes, chroma increases, and new
+   highlight clipping/shadow crushing. This is a safety/tonality guide, not a
+   perceptual color-quality assessment.
+5. The result automatically updates the **strength slider**, reference LUT
+   preview, and **PF3 export strength**. To inspect an individual RAW, open it
+   separately with **Preview photo / RAW**. You can still move the slider.
+6. If even 5% exceeds the limits, the tool reports that 5% is a **fallback,
+   not a verified-safe value**. Check actual Canon DPP rendering before use.
+
+Initial GUI strength is **50% (provisional)** instead of 100%; this is *not* an
+analyzed recommendation until RAW analysis completes. The analyzer is RAW-only:
+JPEG/PNG do not qualify as RAW references. It does not need any new third-party
+packages beyond the existing NumPy, Pillow and `rawpy` dependencies. On Python
+versions lacking compatible rawpy wheels (e.g., the previously reported
+Python 3.15 environment), RAW analysis remains unavailable until rawpy is
+installed successfully; this update **does not resolve rawpy installation**.
+
+**Important for video LUTs:** The conversion pipeline still treats the LUT as
+**display-referred sRGB → sRGB** unless the input was correctly color-managed.
+The new classifier can estimate the *kind* of transform from RGB table patterns,
+but **cannot identify exact Log/gamut encodings or perform color-space conversion**.
+A technical LUT (e.g. S-Log3 → Rec.709) still requires correct color management;
+reducing the strength cannot fix a mismatched input color space.
+
+## Content-based CUBE LUT type estimate (v1.0 revision)
+
+Opening a `.cube` now **analyzes its actual 3D RGB lookup table** to estimate
+**Creative / likely Technical / likely Hybrid / Uncertain**. The classifier **does
+not look at filenames, TITLE text, comments, or third-party metadata**. It samples
+the neutral ramp to measure the shape of the transfer function, compressed input
+ranges, clipped black/white plateaus, and RGB channel tinting. It additionally
+checks whether a neutral-preserving, chromatic transform resembles a color/gamut
+matrix. Ambiguous content is marked **Uncertain**, rather than falsely claiming
+knowledge of a source or target color space.
+
+- The estimate and its qualitative confidence appear inline under the strength
+  slider, in all four supported UI languages. No Technical LUT warning dialog is
+  shown and **PF3/XMP export is never blocked** by this classification.
+- **Creative** CUBEs keep the existing **RAW 1–5 photo automatic strength** tool.
+  If Technical/Hybrid is inferred, the RAW optimizer button is inactive, because
+  attenuating a log/gamut transform is not a valid input-space conversion.
+  **Uncertain** CUBEs retain opt-in RAW optimization, but users should verify
+  suitability. XMP inputs retain their prior RAW optimization behavior.
+- The `Override` selector allows the user to explicitly choose Creative,
+  Technical or Hybrid if the estimate is wrong. For example, choose Creative to
+  enable the original RAW optimizer for a misclassified artistic LUT. This
+  only changes eligibility for RAW auto strength; it **does not** change
+  transform data, manually selected intensity, or the PF3 export algorithm.
+- A 3D RGB table *cannot unambiguously reveal* a LUT's intended input gamut,
+  transfer function or creative purpose. A technical gamut matrix can be
+  indistinguishable from a creative saturation matrix; a strong film curve can
+  resemble a log conversion. The classifier is a **heuristic**, not a standard
+  color-space identification tool. It does **not** perform log or gamut conversion
+  or attempt to separate hybrid looks into underlying technical + creative LUTs.
 
 ## XMP support (introduced in v0.6)
 
@@ -80,7 +282,7 @@ but actual Lightroom import has not been verified in this environment.
 
 1. Extract the ZIP and launch `launch_windows.bat` (Python dependencies required).
 2. Click **1. .cube / .xmp 불러오기**, choose the source and read any conversion warnings.
-3. Optionally load a photo or RAW and compare the full-resolution target look.
+3. Optionally select 1–5 RAW files with **Auto strength · 1–5 RAW** to recommend a conservative strength (provisional default: 50%), then open a photo/RAW to compare the full-resolution target look.
 4. For a Canon `.pf3`, set base style, strength and PSE DLL, then click **3. 실제 .pf3 파일 생성**.
 5. For an Adobe `.xmp` from a `.cube`, click **4. .cube → Lightroom .xmp 생성**. This
    option is disabled when the input is an XMP.
@@ -166,7 +368,7 @@ The file chooser includes CR2/CR3/CRW, DNG, NEF/NRW, ARW, RAF, ORF, RW2 and othe
 rawpy/LibRaw extensions. Actual support depends on camera and compression mode.
 LibRaw target mode develops full-resolution sensor data with camera WB,
 no auto brightness, and 8-bit sRGB. Native mode uses Canon development instead.
-No automatic Log/gamut input conversion is inferred from a LUT filename.
+No automatic Log/gamut conversion is performed, and LUT filenames are not used for type estimation.
 An N-Log/Rec.2020 LUT applied directly to sRGB is interpreted as that explicit
 RGB mapping, not as a complete colour-managed N-Log workflow.
 

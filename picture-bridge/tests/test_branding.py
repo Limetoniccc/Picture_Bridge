@@ -1,4 +1,4 @@
-"""Verify Picture Bridge v1.0 branding through CLI, XMP, GUI and packaging."""
+"""Verify Picture Bridge v1.1 branding through CLI, XMP, GUI and packaging."""
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -30,15 +30,15 @@ class BrandingTests(unittest.TestCase):
 
     def test_common_app_identity(self):
         self.assertEqual((APP_NAME, APP_VERSION, APP_AUTHOR),
-                         ('Picture Bridge', '1.0', 'LimeT'))
-        self.assertEqual(display_name(), 'Picture Bridge v1.0')
+                         ('Picture Bridge', '1.1', 'LimeT'))
+        self.assertEqual(display_name(), 'Picture Bridge v1.1')
 
     def test_cli_version_message(self):
         text = StringIO()
         with redirect_stdout(text), self.assertRaises(SystemExit) as result:
             main(['--version'])
         self.assertEqual(result.exception.code, 0)
-        self.assertIn('Picture Bridge v1.0', text.getvalue())
+        self.assertIn('Picture Bridge v1.1', text.getvalue())
         self.assertIn('LimeT', text.getvalue())
 
     def test_profile_defaults_to_picture_bridge_group(self):
@@ -61,7 +61,7 @@ class BrandingTests(unittest.TestCase):
             self.assertIn('PictureBridge.exe', script)
         for marker in ("StringStruct('CompanyName', 'LimeT')",
                        "StringStruct('ProductName', 'Picture Bridge')",
-                       'prodvers=(1, 0, 0, 0)', 'filevers=(1, 0, 0, 0)'):
+                       'prodvers=(1, 1, 0, 0)', 'filevers=(1, 1, 0, 0)'):
             self.assertIn(marker, metadata)
 
     def test_gui_title_author_and_about(self):
@@ -71,7 +71,7 @@ class BrandingTests(unittest.TestCase):
             self.skipTest(f'Tk display unavailable: {error}')
         try:
             app = App(root)
-            self.assertIn('Picture Bridge v1.0', root.title())
+            self.assertIn('Picture Bridge v1.1', root.title())
             texts = []
             def visit(widget):
                 for child in widget.winfo_children():
@@ -80,11 +80,11 @@ class BrandingTests(unittest.TestCase):
                     visit(child)
             visit(root)
             self.assertIn('Picture Bridge', texts)
-            self.assertIn('버전 1.0  ·  제작자 : LimeT', texts)
+            self.assertIn('버전 1.1  ·  제작자 : LimeT', texts)
             with patch('app.messagebox.showinfo') as popup:
                 app.show_about()
                 self.assertIn('LimeT', popup.call_args.args[1])
-                self.assertIn('Picture Bridge v1.0', popup.call_args.args[1])
+                self.assertIn('Picture Bridge v1.1', popup.call_args.args[1])
         finally:
             root.destroy()
 

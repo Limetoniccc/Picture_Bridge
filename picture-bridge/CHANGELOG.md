@@ -1,3 +1,50 @@
+# Picture Bridge Changelog
+
+## v1.1 (2026-10-30) — Panasonic LUMIX and sRGB CUBE outputs
+
+- Added CUBE/XMP → 33³ standard CUBE for Photoshop sRGB documents.
+- Added LUMIX CUBE output using `#LUMIXPHOTOSTYLE` base-style tag,
+  33³ full-range LUT values, clipping report and atomic save.
+- Photoshop CUBE and LUMIX CUBE use the identical RGB sampling, clipping,
+  rounding and intensity setting; LUMIX differs only in Photo Style metadata.
+- Added XMP → CUBE support, GUI selection, CLI `--lumix-style`, translations
+  in four languages and relevant regression tests.
+- Removed the cumbersome Lightroom TIFF reference-chart and paired-TIFF fitting
+  workflow from GUI, CLI, implementation, tests and documentation.
+- Simplified the LUMIX help text and removed the bottom PF3 camera-compatibility
+  note from the main window. Canon PF3 generation code remains untouched.
+- Lightroom develop preset conversion is still approximate; the software does
+  not emulate the Adobe RAW pipeline or perform automatic camera color conversion.
+
+## v1.0 — Content-based LUT type estimate and Creative RAW optimizer
+
+- Add `lut_classifier.py`: inspect **only the CUBE RGB table**, never file names,
+  TITLE, comments or metadata. Estimate Creative, Technical, Hybrid or Uncertain.
+- Analyze neutral transfer curves, black/white plateaus, tone remapping and
+  neutral channel tint. Recognize matrix-like gamut/saturation ambiguity.
+- Display confidence and classification inline in Korean, English, Japanese and
+  Simplified Chinese, with a **manual type override** for false positives.
+- Keep existing RAW 1–5 photo strength recommendation for Creative LUTs. Do not
+  offer this heuristic for likely Technical/Hybrid unless the user overrides.
+  Uncertain LUTs remain eligible; XMP behavior remains unchanged.
+- Do **not** add Technical LUT warning popups, block PF3/XMP export, or alter
+  actual LUT transform data and underlying conversion algorithms.
+- Document that 3D LUT RGB data cannot guarantee input/output colorspaces and
+  that log/gamut conversion is not implemented. Added classifier and GUI tests.
+
+## Picture Bridge v1.0 — RAW reference strength recommendation (Mode B)
+
+- Added `raw_strength.py`: analyze **1–5** RAW reference photos and recommend the
+  **highest conservative** CUBE/XMP look intensity passing guardrails on all images.
+- Added asynchronous GUI button with results applied directly to the existing
+  PF3 strength slider and both preview/export paths, without blocking the UI.
+- Changed initial GUI strength from 100% to **provisional 50%**.
+- Four-language interface labels, progress, warnings and errors added.
+- The analysis assumes camera-WB, non-auto-brightened, rendered sRGB RAW; cannot
+  recover technical Log/gamut LUT input transforms or assess creative aesthetics.
+- `rawpy` remains necessary for RAW support; no new dependency added.
+- Added deterministic analyzer and GUI tests. Version remains 1.0 by request.
+
 ## v1.0 — Four-language interface update (2026-10-28)
 
 - Added runtime UI language selection: 한국어, English, 日本語, 简体中文.
@@ -8,7 +55,6 @@
 - Preserved Picture Bridge v1.0 branding (Created by LimeT) and all file converters.
 - Added localization catalog validation and GUI integration regression tests.
 
-# Changelog
 
 ## v1.0 (2026-10-28)
 

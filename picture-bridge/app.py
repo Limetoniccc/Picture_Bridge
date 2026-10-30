@@ -1,4 +1,4 @@
-"""Picture Bridge: CUBE/XMP -> approximate PF3 and CUBE -> Adobe XMP profile."""
+"""Picture Bridge: CUBE/XMP to Canon PF3, Adobe XMP and LUMIX CUBE."""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -12,8 +12,11 @@ from app_info import APP_NAME, APP_VERSION, APP_AUTHOR, display_name
 from canon_render import render_pair
 from i18n import LANGUAGES, LANGUAGE_LABELS, load_language, save_language, tr
 from lut import load_cube, write_cube
+from lumix_export import export_lumix_cube, export_srgb_cube, PHOTO_STYLES
+from lut_classifier import classify_lut
 from pf3_native import STYLE_IDS, export_pf3, find_canon_library
 from photo_loader import load_photo, patterns, RAW_EXTENSIONS, RASTER_EXTENSIONS
+from raw_strength import recommend_strength
 from preview import ComparisonView
 from xmp_bridge import load_xmp, export_xmp
 
@@ -27,10 +30,21 @@ class App:
         self._translatables = []
         self._dynamic = {}
         self.root.title(self.tr('app_title', name=display_name()))
-        self.root.minsize(850, 690)
-        self.root.geometry('1100x820')
+        self.root.minsize(850, 725)
+        self.root.geometry('1100x870')
         self.photo_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='photo-load')
         self.native_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='canon-preview')
+        self.strength_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='raw-strength')
+        self.strength_future = None
+        self.strength_timer = None
+        self.strength_paths = ()
+        self.strength_cube = None
+        self.strength_lut_kind = None
+        self.strength_message = tk.StringVar(value=self.tr('raw_strength_ready'))
+        self.lut_classification = None
+        self.lut_kind_override = 'auto'
+        self.lut_kind_selection = tk.StringVar()
+        self.lut_class_message = tk.StringVar(value=self.tr('lut_class_empty'))
         self.native_future = None
         self.native_pending = None
         self.native_timer = None
@@ -51,8 +65,9 @@ class App:
         self.photo = None
         self.preview = None
         self.base = tk.StringVar(value='Neutral')
+        self.lumix_style = tk.StringVar(value='STD')
         self.name = tk.StringVar(value='')
-        self.strength = tk.DoubleVar(value=100)
+        self.strength = tk.DoubleVar(value=50)
         self.dll_path = tk.StringVar(value='')
         self.status = tk.StringVar()
         self.photo_status = tk.StringVar()
@@ -116,8 +131,28 @@ class App:
         self._label(row, 'strength', width=13).pack(side='left')
         ttk.Scale(row, variable=self.strength, from_=0, to=100, orient='horizontal',
                   command=self.on_strength).pack(side='left', fill='x', expand=True)
-        self.strength_label = ttk.Label(row, text='100%', width=6)
+        self.strength_label = ttk.Label(row, text='50%', width=6)
         self.strength_label.pack(side='left', padx=(10, 4))
+        class_row = ttk.Frame(options)
+        class_row.pack(fill='x', pady=(0, 9))
+        self._label(class_row, 'lut_class_label', width=13).pack(side='left')
+        self.lut_class_info = ttk.Label(class_row, textvariable=self.lut_class_message)
+        self.lut_class_info.pack(side='left', padx=(0, 12))
+        self.lut_class_picker = ttk.Combobox(class_row, textvariable=self.lut_kind_selection,
+                                             state='readonly', width=19,
+                                             values=self._lut_class_options())
+        self.lut_class_picker.pack(side='right')
+        self.lut_class_picker.bind('<<ComboboxSelected>>', self.on_lut_class_override)
+        self.lut_kind_selection.set(self.tr('lut_class_override_auto'))
+        self._label(class_row, 'lut_class_override_label').pack(side='right', padx=(0, 8))
+        raw_row = ttk.Frame(options)
+        raw_row.pack(fill='x', pady=(0, 9))
+        self.raw_strength_button = self._button(raw_row, 'raw_strength_button', self.start_raw_strength)
+        self.raw_strength_button.pack(side='left', padx=(0, 10))
+        self.raw_strength_label = ttk.Label(raw_row, textvariable=self.strength_message, wraplength=720)
+        self.raw_strength_label.pack(side='left', fill='x', expand=True)
+        self.raw_strength_label.bind('<Configure>', lambda e: self.raw_strength_label.configure(
+            wraplength=max(200, e.width - 12)))
         row = ttk.Frame(options)
         row.pack(fill='x', pady=(0, 9))
         self._label(row, 'canon_engine', width=13).pack(side='left')
@@ -132,9 +167,14 @@ class App:
         self.xmp_button = self._button(action, 'save_xmp', self.save_xmp, state='disabled')
         self.xmp_button.pack(side='left', padx=(12, 0))
         self._button(action, 'install_pse', lambda: webbrowser.open(PSE_URL)).pack(side='left', padx=(12, 0))
-        footnote = self._label(outer, 'footnote', wraplength=1000)
-        footnote.pack(fill='x', anchor='w', pady=(7, 0))
-        footnote.bind('<Configure>', lambda e: footnote.configure(wraplength=max(200, e.width - 12)))
+        lumix_row = ttk.Frame(outer)
+        lumix_row.pack(fill='x', pady=(5, 1))
+        self._label(lumix_row, 'lumix_base_label').pack(side='left', padx=(0, 8))
+        self.lumix_selector = ttk.Combobox(lumix_row, textvariable=self.lumix_style,
+             values=list(PHOTO_STYLES), state='readonly', width=12)
+        self.lumix_selector.pack(side='left', padx=(0, 10))
+        self._button(lumix_row, 'save_lumix', self.save_lumix).pack(side='left', padx=(0, 10))
+        self._label(lumix_row, 'lumix_note', foreground='#5d5d5d').pack(side='left', fill='x', expand=True)
 
     def tr(self, key: str, **values) -> str:
         return tr(self.language, key, **values)
@@ -162,6 +202,47 @@ class App:
     def _mode_options(self):
         return (self.tr('mode_canon'), self.tr('mode_reference'))
 
+    def _lut_class_options(self):
+        return tuple(self.tr('lut_class_override_' + key)
+                     for key in ('auto', 'creative', 'technical', 'hybrid'))
+
+    def _effective_lut_kind(self):
+        if self.input_kind != 'cube' or self.lut_classification is None:
+            return 'other'
+        return (self.lut_kind_override if self.lut_kind_override != 'auto'
+                else self.lut_classification.kind)
+
+    def _refresh_lut_class(self):
+        if self.input_kind != 'cube' or self.lut_classification is None:
+            self.lut_class_message.set(self.tr('lut_class_empty'))
+        else:
+            report = self.lut_classification
+            self.lut_class_message.set(self.tr('lut_class_result',
+                kind=self.tr('lut_class_kind_' + self._effective_lut_kind()),
+                confidence=self.tr('lut_class_confidence_' + report.confidence)))
+        # Never block PF3 conversion. The optimizer is exclusively intended
+        # for creative LUTs; uncertain types remain opt-in because uncertain
+        # signatures are explicitly not proof of a technical input domain.
+        permitted = self._effective_lut_kind() in ('creative', 'uncertain', 'other')
+        if hasattr(self, 'raw_strength_button') and self.strength_future is None:
+            self.raw_strength_button.configure(state='normal' if permitted else 'disabled')
+        if (self._effective_lut_kind() in ('technical', 'hybrid')
+                and self.strength_future is None and not hasattr(self, 'strength_result')):
+            self.strength_message.set(self.tr('lut_class_raw_unavailable'))
+        elif (self.strength_future is None and not hasattr(self, 'strength_result')):
+            self.strength_message.set(self.tr('raw_strength_ready'))
+
+    def on_lut_class_override(self, _=None):
+        selected = self.lut_kind_selection.get()
+        for key in ('auto', 'creative', 'technical', 'hybrid'):
+            if selected == self.tr('lut_class_override_' + key):
+                self.lut_kind_override = key
+                if (self._effective_lut_kind() in ('technical', 'hybrid')
+                        and hasattr(self, 'strength_result')):
+                    del self.strength_result  # Old Creative recommendation no longer applies.
+                self._refresh_lut_class()
+                return
+
     def _is_canon_mode(self):
         # Keep both the current localized values and legacy Korean constants
         # recognizable so callers/tests that directly set preview_mode still work.
@@ -185,12 +266,22 @@ class App:
         self.mode_selector.configure(values=self._mode_options())
         self.preview_mode.set(self.tr('mode_canon' if was_canon else 'mode_reference'))
         self.preview_view.refresh_language()
+        if self.strength_future is None:
+            if hasattr(self, 'strength_result'):
+                r = self.strength_result
+                self.strength_message.set(self.tr('raw_strength_result',
+                    percent=r.recommended_percent, count=r.photos))
+            else:
+                self.strength_message.set(self.tr('raw_strength_ready'))
+        self.lut_class_picker.configure(values=self._lut_class_options())
+        self.lut_kind_selection.set(self.tr('lut_class_override_' + self.lut_kind_override))
+        self._refresh_lut_class()
         # Switching the display language must not restart Canon or LUT rendering.
 
     def show_about(self):
         messagebox.showinfo(self.tr('about'),
                             f'{display_name()}\n{self.tr("credit", version=APP_VERSION, author=APP_AUTHOR)}\n\n'
-                            '.cube / .xmp → .pf3\n.cube → .xmp\n\n' + self.tr('license'))
+                            '.cube / .xmp → .pf3\n.cube → .xmp\n.xmp → .cube\n.cube / .xmp → LUMIX .cube\n\n' + self.tr('license'))
 
     def _file_filters(self):
         return [(self.tr('file_filter_lut_xmp'), '*.cube *.xmp'),
@@ -243,8 +334,19 @@ class App:
             else:
                 raise ValueError(self.tr('wrong_extension'))
             self.cube, self.cube_path = cube, path
+            if hasattr(self, 'strength_result'):
+                del self.strength_result
+            self.strength_message.set(self.tr('raw_strength_ready'))
             self.input_kind, self.input_info = kind, info
+            # Only RGB table samples are classified; file names and comments
+            # never participate in LUT type estimation.
+            self.lut_classification = classify_lut(cube) if kind == 'cube' else None
+            self.lut_kind_override = 'auto'
+            self.lut_kind_selection.set(self.tr('lut_class_override_auto'))
+            self._refresh_lut_class()
             self.name.set(path.stem[:31])
+            self.strength.set(50)
+            self.on_strength()
             self.xmp_button.configure(state='normal' if kind == 'cube' else 'disabled')
             # Status must remain localized even after switching languages.
             self._show_loaded_status()
@@ -279,6 +381,9 @@ class App:
             for timer in (self.native_timer, self.native_poll_timer):
                 if timer:
                     self.root.after_cancel(timer)
+            if self.strength_timer:
+                self.root.after_cancel(self.strength_timer)
+            self.strength_executor.shutdown(wait=False, cancel_futures=True)
             self.native_executor.shutdown(wait=False, cancel_futures=True)
             self.photo_executor.shutdown(wait=False, cancel_futures=True)
 
@@ -319,6 +424,70 @@ class App:
         except Exception as error:
             self._set_dynamic(self.photo_status, 'photo_load_failed')
             messagebox.showerror(self.tr('photo_error'), str(error))
+
+    def start_raw_strength(self):
+        # The RAW optimizer is intended for Creative / uncertain looks only.
+        # A technical Log/gamut transform cannot be repaired by attenuation.
+        if self.cube is None:
+            messagebox.showwarning(self.tr('lut_required_title'), self.tr('lut_required'))
+            return
+        if self.strength_future is not None:
+            return
+        # No technical-LUT warning or PF3 export block. Simply reserve RAW
+        # safety optimisation for creative/uncertain LUTs, unless user has
+        # explicitly corrected the estimated type with the override control.
+        if self._effective_lut_kind() in ('technical', 'hybrid'):
+            self.strength_message.set(self.tr('lut_class_raw_unavailable'))
+            return
+        selected = filedialog.askopenfilenames(title=self.tr('raw_strength_select'),
+                     filetypes=[(self.tr('file_filter_camera_raw'), patterns(RAW_EXTENSIONS)),
+                                (self.tr('file_filter_all'), '*.*')])
+        if not selected:
+            return
+        if not 1 <= len(selected) <= 5 or any(Path(p).suffix.lower() not in RAW_EXTENSIONS for p in selected):
+            messagebox.showwarning(self.tr('raw_strength_title'), self.tr('raw_strength_bad_selection'))
+            return
+        self.strength_paths = tuple(selected)
+        self.strength_cube = self.cube
+        self.strength_lut_kind = self._effective_lut_kind()
+        self.raw_strength_button.configure(state='disabled')
+        self.strength_message.set(self.tr('raw_strength_processing', count=len(selected)))
+        self.strength_future = self.strength_executor.submit(recommend_strength,
+                                                               self.strength_cube, self.strength_paths)
+        self.strength_timer = self.root.after(80, self.poll_raw_strength)
+
+    def poll_raw_strength(self):
+        self.strength_timer = None
+        if self.closed or self.strength_future is None:
+            return
+        if not self.strength_future.done():
+            self.strength_timer = self.root.after(80, self.poll_raw_strength)
+            return
+        future, self.strength_future = self.strength_future, None
+        self._refresh_lut_class()
+        try:
+            result = future.result()
+        except Exception as error:
+            self.strength_message.set(self.tr('raw_strength_failed'))
+            messagebox.showerror(self.tr('raw_strength_title'),
+                                 self.tr('raw_strength_error', error=str(error)))
+            return
+        # Do not apply a stale recommendation to a different LUT.
+        if (self.cube is not self.strength_cube
+                or self._effective_lut_kind() != self.strength_lut_kind):
+            self.strength_message.set(self.tr('raw_strength_stale'))
+            return
+        self.strength_result = result
+        self.strength.set(result.recommended_percent)
+        self.on_strength()
+        self.strength_message.set(self.tr('raw_strength_result',
+                          percent=result.recommended_percent, count=result.photos))
+        summary = self.tr('raw_strength_summary',
+                          percent=result.recommended_percent, count=result.photos)
+        if not result.minimum_passed:
+            summary += '\n\n' + self.tr('raw_strength_floor_warning')
+        summary += '\n\n' + self.tr('raw_strength_caveat')
+        messagebox.showinfo(self.tr('raw_strength_title'), summary)
 
     def on_strength(self, _=None):
         self.strength_label.configure(text=f'{self.strength.get():.0f}%')
@@ -390,10 +559,48 @@ class App:
         if not filename:
             return
         try:
-            write_cube(self.cube, filename)
-            messagebox.showinfo(self.tr('save_success'), self.tr('save_cube_success', path=filename))
+            if self.cube_path is not None and Path(filename).resolve() == self.cube_path.resolve():
+                raise ValueError(self.tr('lumix_no_overwrite'))
+            info = export_srgb_cube(self.cube, filename, strength=self.strength.get()/100,
+                title=self.name.get().strip() or self.cube_path.stem)
+            messagebox.showinfo(self.tr('save_success'),
+                self.tr('save_cube_success', path=filename) + '\n' +
+                self.tr('save_cube_strength_note', strength=round(info['strength']*100)))
         except Exception as error:
             messagebox.showerror(self.tr('save_failure'), str(error))
+
+    def save_lumix(self):
+        if self.cube is None or self.cube_path is None:
+            messagebox.showwarning(self.tr('lut_required_title'), self.tr('lut_required'))
+            return
+        source = self.cube_path
+        default_name = ''.join(ch if ch.isascii() and (ch.isalnum() or ch in '-_') else '_'
+                               for ch in source.stem)[:32].strip('_') or 'PB_LUT'
+        target = filedialog.asksaveasfilename(defaultextension='.cube',
+            initialfile=f'{default_name}_LUMIX.cube',
+            filetypes=[(self.tr('file_filter_cube'), '*.cube')])
+        if not target:
+            return
+        if Path(target).resolve() == source.resolve():
+            messagebox.showerror(self.tr('save_failure'), self.tr('lumix_no_overwrite'))
+            return
+        try:
+            self.root.configure(cursor='watch')
+            self.root.update_idletasks()
+            info = export_lumix_cube(
+                self.cube, target,
+                style=self.lumix_style.get(),
+                strength=self.strength.get()/100,
+                title=self.name.get().strip() or source.stem)
+            extra = self.tr('lumix_source_preset') if self.input_kind == 'xmp' and self.input_info.kind == 'preset' else ''
+            messagebox.showinfo(self.tr('lumix_saved_title'),
+                self.tr('lumix_saved_body', path=info['file'], style=info['style'],
+                        strength=round(info['strength']*100),
+                        clipped=info['clamped_component_fraction']*100) + extra)
+        except Exception as error:
+            messagebox.showerror(self.tr('save_failure'), str(error))
+        finally:
+            self.root.configure(cursor='')
 
     def save_xmp(self):
         if self.cube is None or self.cube_path is None or self.input_kind != 'cube':
