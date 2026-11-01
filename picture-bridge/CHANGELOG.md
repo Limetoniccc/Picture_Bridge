@@ -1,5 +1,15 @@
 # Picture Bridge Changelog
 
+## v1.1 — UI workflow refinements (no version increment)
+
+- Retained the original v1.1 window appearance and all conversion engines.
+- Grouped source loading into **1. Import**, existing conversion settings into **2. Color conversion settings**, and all generated formats into **3. Generate files**.
+- Moved Canon PSE installation shortcut into the top-right header.
+- Standardized output action wording to **Generate**, with Korean equivalents ending in **생성**.
+- Renamed comparison modes and preview captions (including Korean JPG/RAW-based modes).
+- Automatically appended `_PB` to the user-editable style name, without duplicating the suffix or exceeding the existing 31-character limit.
+- Preserved four-language UI and Canon PF3 conversion implementation.
+
 ## v1.1 (2026-10-30) — Panasonic LUMIX and sRGB CUBE outputs
 
 - Added CUBE/XMP → 33³ standard CUBE for Photoshop sRGB documents.

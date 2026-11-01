@@ -87,21 +87,24 @@ class App:
                                             width=12, values=list(LANGUAGES.values()))
         self.language_picker.pack(side='left', padx=(0, 12))
         self.language_picker.bind('<<ComboboxSelected>>', self.change_language)
+        self._button(language_bar, 'install_pse', lambda: webbrowser.open(PSE_URL)).pack(side='left', padx=(0, 12))
         self._button(language_bar, 'about', self.show_about).pack(side='left')
         self._label(outer, 'credit', version=APP_VERSION, author=APP_AUTHOR,
                     font=('Segoe UI', 10)).pack(anchor='w', pady=(0, 2))
         self._label(outer, 'description').pack(anchor='w', pady=(3, 13))
 
-        input_row = ttk.Frame(outer)
-        input_row.pack(fill='x', pady=(0, 8))
+        # Step 1 — keep all source import actions in one clearly labeled group.
+        input_group = self._frame(outer, 'input_section', padding=(12, 8))
+        input_group.pack(fill='x', pady=(0, 8))
+        input_row = ttk.Frame(input_group)
+        input_row.pack(fill='x')
         self._button(input_row, 'open_lut', self.open_cube).pack(side='left', padx=(0, 8))
         self.photo_button = self._button(input_row, 'open_photo', self.open_photo)
-        self.photo_button.pack(side='left', padx=(0, 8))
-        self._button(input_row, 'resample', self.resample).pack(side='left')
-        status_label = ttk.Label(outer, textvariable=self.status, wraplength=1000)
+        self.photo_button.pack(side='left')
+        status_label = ttk.Label(input_group, textvariable=self.status, wraplength=1000)
         status_label.pack(fill='x', anchor='w', pady=(0, 9))
         status_label.bind('<Configure>', lambda e: status_label.configure(wraplength=max(200, e.width - 12)))
-        photo_status_label = ttk.Label(outer, textvariable=self.photo_status, wraplength=1000)
+        photo_status_label = ttk.Label(input_group, textvariable=self.photo_status, wraplength=1000)
         photo_status_label.pack(fill='x', anchor='w', pady=(0, 5))
         photo_status_label.bind('<Configure>', lambda e: photo_status_label.configure(wraplength=max(200, e.width - 12)))
 
@@ -121,7 +124,9 @@ class App:
         row = ttk.Frame(options)
         row.pack(fill='x', pady=(0, 9))
         self._label(row, 'style_name', width=13).pack(side='left')
-        ttk.Entry(row, textvariable=self.name, width=32).pack(side='left', padx=(0, 16))
+        self.name_entry = ttk.Entry(row, textvariable=self.name, width=32)
+        self.name_entry.pack(side='left', padx=(0, 16))
+        self.name_entry.bind('<FocusOut>', self._normalize_style_name)
         self._label(row, 'base_style').pack(side='left', padx=(0, 6))
         base_selector = ttk.Combobox(row, textvariable=self.base, values=list(STYLE_IDS), width=16, state='readonly')
         base_selector.pack(side='left')
@@ -161,20 +166,38 @@ class App:
         self._button(row, 'check_installation', self.check_dll).pack(side='left', padx=(7, 0))
         self._label(options, 'dll_note', foreground='#5d5d5d').pack(anchor='w')
 
-        action = ttk.Frame(outer)
-        action.pack(fill='x', pady=(11, 4))
-        self._button(action, 'save_pf3', self.save_pf3).pack(side='left')
+        # Step 3 — group all file-generation actions in one place.
+        export_group = self._frame(outer, 'export_section', padding=(12, 8))
+        export_group.pack(fill='x', pady=(11, 2))
+        action = ttk.Frame(export_group)
+        action.pack(fill='x', pady=(0, 8))
+        self._button(action, 'resample', self.resample).pack(side='left')
         self.xmp_button = self._button(action, 'save_xmp', self.save_xmp, state='disabled')
         self.xmp_button.pack(side='left', padx=(12, 0))
-        self._button(action, 'install_pse', lambda: webbrowser.open(PSE_URL)).pack(side='left', padx=(12, 0))
-        lumix_row = ttk.Frame(outer)
-        lumix_row.pack(fill='x', pady=(5, 1))
+        self._button(action, 'save_pf3', self.save_pf3).pack(side='left', padx=(12, 0))
+        lumix_row = ttk.Frame(export_group)
+        lumix_row.pack(fill='x', pady=(0, 1))
         self._label(lumix_row, 'lumix_base_label').pack(side='left', padx=(0, 8))
         self.lumix_selector = ttk.Combobox(lumix_row, textvariable=self.lumix_style,
              values=list(PHOTO_STYLES), state='readonly', width=12)
         self.lumix_selector.pack(side='left', padx=(0, 10))
         self._button(lumix_row, 'save_lumix', self.save_lumix).pack(side='left', padx=(0, 10))
         self._label(lumix_row, 'lumix_note', foreground='#5d5d5d').pack(side='left', fill='x', expand=True)
+
+    @staticmethod
+    def _name_with_pb_suffix(name: str) -> str:
+        """Keep Canon's 31-character name budget while adding _PB exactly once."""
+        stem = name.strip()
+        while stem.lower().endswith('_pb'):
+            stem = stem[:-3].rstrip()
+        return (stem or 'PictureBridge')[:28].rstrip() + '_PB'
+
+    def _normalize_style_name(self, _=None):
+        candidate = self.name.get().strip() or (self.cube_path.stem if self.cube_path else 'PictureBridge')
+        normalized = self._name_with_pb_suffix(candidate)
+        if self.name.get() != normalized:
+            self.name.set(normalized)
+        return normalized
 
     def tr(self, key: str, **values) -> str:
         return tr(self.language, key, **values)
@@ -344,7 +367,7 @@ class App:
             self.lut_kind_override = 'auto'
             self.lut_kind_selection.set(self.tr('lut_class_override_auto'))
             self._refresh_lut_class()
-            self.name.set(path.stem[:31])
+            self.name.set(self._name_with_pb_suffix(path.stem))
             self.strength.set(50)
             self.on_strength()
             self.xmp_button.configure(state='normal' if kind == 'cube' else 'disabled')
@@ -562,7 +585,7 @@ class App:
             if self.cube_path is not None and Path(filename).resolve() == self.cube_path.resolve():
                 raise ValueError(self.tr('lumix_no_overwrite'))
             info = export_srgb_cube(self.cube, filename, strength=self.strength.get()/100,
-                title=self.name.get().strip() or self.cube_path.stem)
+                title=self._normalize_style_name())
             messagebox.showinfo(self.tr('save_success'),
                 self.tr('save_cube_success', path=filename) + '\n' +
                 self.tr('save_cube_strength_note', strength=round(info['strength']*100)))
@@ -591,7 +614,7 @@ class App:
                 self.cube, target,
                 style=self.lumix_style.get(),
                 strength=self.strength.get()/100,
-                title=self.name.get().strip() or source.stem)
+                title=self._normalize_style_name())
             extra = self.tr('lumix_source_preset') if self.input_kind == 'xmp' and self.input_info.kind == 'preset' else ''
             messagebox.showinfo(self.tr('lumix_saved_title'),
                 self.tr('lumix_saved_body', path=info['file'], style=info['style'],
@@ -613,7 +636,7 @@ class App:
         try:
             self.root.configure(cursor='watch')
             self.root.update_idletasks()
-            info = export_xmp(self.cube, target, name=self.name.get().strip() or self.cube_path.stem)
+            info = export_xmp(self.cube, target, name=self._normalize_style_name())
             self._set_dynamic(self.status, 'xmp_saved_status', size=info['size'], path=info['file'])
             warnings = '\n'.join([self.tr('xmp_export_warning_import'),
                                   self.tr('xmp_export_warning_srgb'), self.tr('xmp_export_warning_resample')])
@@ -653,7 +676,7 @@ class App:
             self.root.configure(cursor='watch')
             self.root.update_idletasks()
             info = export_pf3(self.cube, target,
-                  name=self.name.get().strip() or self.cube_path.stem,
+                  name=self._normalize_style_name(),
                   dll=self.dll_path.get().strip() or None,
                   base=self.base.get(), strength=self.strength.get()/100)
             mae = info['fit']['estimated_rgb_mae_255']
